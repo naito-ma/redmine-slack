@@ -7,6 +7,8 @@ class Listener < Redmine::Hook::Listener
 
 		channel = channel_for_project issue.project
 		url = url_for_project issue.project
+		channel2 = channel_for_project2 issue.project
+		url2 = url_for_project2 issue.project
 
 		return unless channel and url
 		return if issue.is_private?
@@ -36,6 +38,7 @@ class Listener < Redmine::Hook::Listener
 		} if Setting.plugin_redmine_slack['display_watchers'] == 'yes'
 
 		speak msg, channel, attachment, url
+		speak2 msg, channel2, attachment, url2
 	end
 
 	def redmine_slack_issues_edit_after_save(context={})
@@ -44,6 +47,8 @@ class Listener < Redmine::Hook::Listener
 
 		channel = channel_for_project issue.project
 		url = url_for_project issue.project
+		channel2 = channel_for_project2 issue.project
+		url2 = url_for_project2 issue.project
 
 		return unless channel and url and Setting.plugin_redmine_slack['post_updates'] == '1'
 		return if issue.is_private?
@@ -56,6 +61,7 @@ class Listener < Redmine::Hook::Listener
 		attachment[:fields] = journal.details.map { |d| detail_to_field d }
 
 		speak msg, channel, attachment, url
+		speak2 msg, channel2, attachment, url2
 	end
 
 	def model_changeset_scan_commit_for_issue_ids_pre_issue_update(context={})
@@ -65,6 +71,8 @@ class Listener < Redmine::Hook::Listener
 
 		channel = channel_for_project issue.project
 		url = url_for_project issue.project
+		channel2 = channel_for_project2 issue.project
+		url2 = url_for_project2 issue.project
 
 		return unless channel and url and issue.save
 		return if issue.is_private?
@@ -103,6 +111,7 @@ class Listener < Redmine::Hook::Listener
 		attachment[:fields] = journal.details.map { |d| detail_to_field d }
 
 		speak msg, channel, attachment, url
+		speak2 msg, channel2, attachment, url2
 	end
 
 	def controller_wiki_edit_after_save(context = { })
@@ -121,6 +130,8 @@ class Listener < Redmine::Hook::Listener
 
 		channel = channel_for_project project
 		url = url_for_project project
+		channel2 = channel_for_project2 project
+		url2 = url_for_project2 project
 
 		attachment = nil
 		if not page.content.comments.empty?
@@ -129,10 +140,45 @@ class Listener < Redmine::Hook::Listener
 		end
 
 		speak comment, channel, attachment, url
+		speak2 comment, channel2, attachment, url2
 	end
 
 	def speak(msg, channel, attachment=nil, url=nil)
 		url = Setting.plugin_redmine_slack['slack_url'] if not url
+		username = Setting.plugin_redmine_slack['username']
+		icon = Setting.plugin_redmine_slack['icon']
+
+		params = {
+			:text => msg,
+			:link_names => 1,
+		}
+
+		params[:username] = username if username
+		params[:channel] = channel if channel
+
+		params[:attachments] = [attachment] if attachment
+
+		if icon and not icon.empty?
+			if icon.start_with? ':'
+				params[:icon_emoji] = icon
+			else
+				params[:icon_url] = icon
+			end
+		end
+
+		begin
+			client = HTTPClient.new
+			client.ssl_config.cert_store.set_default_paths
+			client.ssl_config.ssl_version = :auto
+			client.post_async url, {:payload => params.to_json}
+		rescue Exception => e
+			Rails.logger.warn("cannot connect to #{url}")
+			Rails.logger.warn(e)
+		end
+	end
+
+	def speak2(msg, channel, attachment=nil, url=nil)
+		url = Setting.plugin_redmine_slack['slack_url2'] if not url
 		username = Setting.plugin_redmine_slack['username']
 		icon = Setting.plugin_redmine_slack['icon']
 
@@ -208,6 +254,34 @@ private
 			(proj.custom_value_for(cf).value rescue nil),
 			(channel_for_project proj.parent),
 			Setting.plugin_redmine_slack['channel'],
+		].find{|v| v.present?}
+
+		# Channel name '-' is reserved for NOT notifying
+		return nil if val.to_s == '-'
+		val
+	end
+
+	def url_for_project2(proj)
+		return nil if proj.blank?
+
+		cf = ProjectCustomField.find_by_name("Slack URL2")
+
+		return [
+			(proj.custom_value_for(cf).value rescue nil),
+			(url_for_project2 proj.parent),
+			Setting.plugin_redmine_slack['slack_url2'],
+		].find{|v| v.present?}
+	end
+
+	def channel_for_project2(proj)
+		return nil if proj.blank?
+
+		cf = ProjectCustomField.find_by_name("Slack Channel2")
+
+		val = [
+			(proj.custom_value_for(cf).value rescue nil),
+			(channel_for_project2 proj.parent),
+			Setting.plugin_redmine_slack['channel2'],
 		].find{|v| v.present?}
 
 		# Channel name '-' is reserved for NOT notifying
