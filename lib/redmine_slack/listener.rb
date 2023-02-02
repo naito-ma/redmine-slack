@@ -183,7 +183,7 @@ class Listener < Redmine::Hook::Listener
 		icon = Setting.plugin_redmine_slack['icon']
 
 		params = {
-			:text => msg,
+			:text => '<!channel> ' + msg,
 			:link_names => 1,
 		}
 
